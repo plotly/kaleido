@@ -71,3 +71,17 @@ def test_coerce_for_js_dimensions(
         f"Height mismatch: got {spec['height']}, expected {expected_height}, "
         f"source: {height_source}, value: {height_value}"
     )
+
+
+@pytest.mark.parametrize("dir_name", ["2024.01.31", "plots.svg"])
+def test_coerce_for_js_directory_with_suffix(tmp_path, dir_name):
+    """Test coerce_for_js ignores the suffix of a directory path."""
+    directory = tmp_path / dir_name
+    directory.mkdir()
+    fig = {"data": [], "layout": {}}
+
+    spec = fig_tools.coerce_for_js(fig, directory, None)
+    assert spec["format"] == fig_tools.DEFAULT_EXT
+
+    spec = fig_tools.coerce_for_js(fig, str(directory), None)
+    assert spec["format"] == fig_tools.DEFAULT_EXT
