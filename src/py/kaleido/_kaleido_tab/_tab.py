@@ -78,16 +78,16 @@ class _KaleidoTab:
         # Apply headers if they exist
         await self._apply_headers()
 
+        # Enable Page events before navigation; completed load events are not replayed.
+        _logger.debug2(f"Calling Page.enable on {self.tab}")
+        _raise_error(await self.tab.send_command("Page.enable"))
+
         # Navigating page. This will trigger the above events.
         _logger.debug2(f"Calling Page.navigate on {self.tab}")
         _raise_error(await self.tab.send_command("Page.navigate", params={"url": url}))
 
-        # Enabling page events (for page_ready- like all events, if already
-        # ready, the latest will fire immediately)
-        _logger.debug2(f"Calling Page.enable on {self.tab}")
-        _raise_error(await self.tab.send_command("Page.enable"))
-
-        # Enabling javascript events (for javascript_ready)
+        # Enabling javascript events (for javascript_ready).
+        # We do this after navigation to receive the new execution context.
         _logger.debug2(f"Calling Runtime.enable on {self.tab}")
         _raise_error(await self.tab.send_command("Runtime.enable"))
 

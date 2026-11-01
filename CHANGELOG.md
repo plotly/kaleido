@@ -1,5 +1,8 @@
 ## Unreleased
 
+### Fixed
+- Prevent occasional hangs during startup by enabling page events before navigation [[#482](https://github.com/plotly/kaleido/pull/482)], with thanks to @dennisjlee for the contribution!
+
 ## v1.5.0 -- 2026-10-06
 
 ### Changed
