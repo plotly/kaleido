@@ -8,7 +8,7 @@ import warnings
 from collections import deque
 from collections.abc import AsyncIterable, Iterable
 from pathlib import Path
-from typing import TYPE_CHECKING, TypedDict, cast, overload
+from typing import TYPE_CHECKING, Literal, TypedDict, cast, overload
 
 import choreographer as choreo
 import logistro
@@ -53,6 +53,35 @@ def _is_figuredict(obj: Any) -> TypeGuard[FigureDict]:
 
 
 _logger = logistro.getLogger(__name__)
+
+_TIMEOUT_ENV_VAR = "KALEIDO_RENDER_TIMEOUT"
+_DEFAULT_TIMEOUT = 90.0
+_AUTO_TIMEOUT = "auto"
+
+
+def _resolve_timeout(timeout: float | None | Literal["auto"]) -> float | None:
+    if timeout != _AUTO_TIMEOUT:
+        return timeout
+
+    env_value = os.getenv(_TIMEOUT_ENV_VAR)
+    if env_value is None or env_value.strip() == "":
+        return _DEFAULT_TIMEOUT
+
+    normalized = env_value.strip().lower()
+    if normalized in {"none", "null", "off"}:
+        return None
+
+    try:
+        return float(normalized)
+    except ValueError:
+        warnings.warn(
+            f"Invalid {_TIMEOUT_ENV_VAR} value '{env_value}', "
+            f"falling back to default timeout of {_DEFAULT_TIMEOUT}s.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        return _DEFAULT_TIMEOUT
+
 
 # Show a warning if the installed Plotly version
 # is incompatible with this version of Kaleido
@@ -107,7 +136,7 @@ class Kaleido(choreo.Browser):
         self,
         # *args: Any, force named vars for all choreographer passthrough
         n: int = 1,
-        timeout: float | None = 90,
+        timeout: float | None | Literal["auto"] = _AUTO_TIMEOUT,
         page_generator: None | PageGenerator | str | Path = None,
         plotlyjs: str | Path | None = None,
         mathjax: str | Path | Literal[False] | None = None,
@@ -123,9 +152,11 @@ class Kaleido(choreo.Browser):
             n (int, optional):
                 Number of processors to use (parallelization). Defaults to 1.
 
-            timeout (float | None, optional):
+            timeout (float | None | "auto", optional):
                 Number of seconds to wait to render any one image. None for no
-                timeout. Defaults to 90.
+                timeout. Defaults to "auto", which uses the
+                KALEIDO_RENDER_TIMEOUT environment variable when set, otherwise
+                falls back to 90 seconds.
 
             page_generator (None | PageGenerator | str | Path, optional):
                 A PageGenerator object can be used for deep customization of the
@@ -173,7 +204,7 @@ class Kaleido(choreo.Browser):
             )
 
         page = page_generator
-        self._timeout = timeout
+        self._timeout = _resolve_timeout(timeout)
         self._n = n
         self._plotlyjs = plotlyjs
         self._mathjax = mathjax

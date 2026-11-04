@@ -476,8 +476,30 @@ async def test_unreasonable_timeout(simple_figure_with_bytes, tmp_path):
             await k.write_fig_from_object(fig_generator(), cancel_on_error=True)
             pytest.fail("Should never reach this, should have raised.")
 
-        ret = await k.write_fig_from_object(fig_generator(), cancel_on_error=False)
-        assert isinstance(ret[0], (asyncio.TimeoutError, TimeoutError))
+    ret = await k.write_fig_from_object(fig_generator(), cancel_on_error=False)
+    assert isinstance(ret[0], (asyncio.TimeoutError, TimeoutError))
+
+
+async def test_env_timeout_override(monkeypatch, simple_figure_with_bytes):
+    """Test that env timeout is used when set to valid value."""
+    monkeypatch.setenv("KALEIDO_RENDER_TIMEOUT", "0.1")
+
+    fig = simple_figure_with_bytes["fig"]
+    opts = simple_figure_with_bytes["opts"]
+
+    async with Kaleido(timeout="auto") as k:
+
+        async def slow_calc_fig(*_args, **_kwargs):
+            await asyncio.sleep(1)
+            pytest.fail("Should have timed out before reaching here!")
+
+        for _ in range(k.tabs_ready.qsize()):
+            t = await k.tabs_ready.get()
+            t._calc_fig = slow_calc_fig  # noqa: SLF001
+            await k.tabs_ready.put(t)
+
+        with pytest.raises((asyncio.TimeoutError, TimeoutError)):  # noqa: PT012
+            await k.write_fig(fig, opts=opts, cancel_on_error=True)
 
 
 @pytest.mark.parametrize(

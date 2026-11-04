@@ -6,13 +6,14 @@ Please see the README.md for more information and a quickstart.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+import warnings
+from typing import TYPE_CHECKING, Literal
 
 from choreographer.cli import get_chrome, get_chrome_sync
 
 from . import _sync_server
 from ._page_generator import PageGenerator
-from .kaleido import Kaleido
+from .kaleido import Kaleido, _resolve_timeout
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterable, Iterable
@@ -84,6 +85,7 @@ async def calc_fig(
     *,
     topojson: str | None = None,
     kopts: dict[str, Any] | None = None,
+    timeout: float | None | Literal["auto"] = "auto",
 ):
     """
     Return binary for plotly figure.
@@ -99,6 +101,7 @@ async def calc_fig(
 
     """
     kopts = kopts or {}
+    kopts.setdefault("timeout", timeout)
     kopts["n"] = 1  # should we force this?
     async with Kaleido(**kopts) as k:
         return await k.calc_fig(
@@ -115,6 +118,7 @@ async def write_fig(
     *,
     topojson: str | None = None,
     kopts: dict[str, Any] | None = None,
+    timeout: float | None | Literal["auto"] = "auto",
     **kwargs,
 ):
     """
@@ -128,7 +132,9 @@ async def write_fig(
     See also the documentation for `Kaleido.write_fig()`.
 
     """
-    async with Kaleido(**(kopts or {})) as k:
+    kopts = kopts or {}
+    kopts.setdefault("timeout", timeout)
+    async with Kaleido(**kopts) as k:
         return await k.write_fig(
             fig,
             path=path,
@@ -142,6 +148,7 @@ async def write_fig_from_object(
     fig_dicts: FigureDict | AnyIterable[FigureDict],
     *,
     kopts: dict[str, Any] | None = None,
+    timeout: float | None | Literal["auto"] = "auto",
     **kwargs,
 ):
     """
@@ -155,36 +162,85 @@ async def write_fig_from_object(
     See also the documentation for `Kaleido.write_fig_from_object()`.
 
     """
-    async with Kaleido(**(kopts or {})) as k:
+    kopts = kopts or {}
+    kopts.setdefault("timeout", timeout)
+    async with Kaleido(**kopts) as k:
         return await k.write_fig_from_object(
             fig_dicts,
             **kwargs,
         )
 
 
-def calc_fig_sync(*args: Any, **kwargs: Any):
+def calc_fig_sync(
+    *args: Any,
+    timeout: float | None | Literal["auto"] = "auto",
+    **kwargs: Any,
+):
     """Call `calc_fig` but blocking."""
     if _global_server.is_running():
+        if timeout != "auto":
+            warnings.warn(
+                "The timeout argument is ignored if using a server.",
+                UserWarning,
+                stacklevel=2,
+            )
         return _global_server.call_function("calc_fig", *args, **kwargs)
     else:
-        return _sync_server.oneshot_async_run(calc_fig, args=args, kwargs=kwargs)
+        kwargs.setdefault("timeout", timeout)
+        sync_timeout = _resolve_timeout(timeout)
+        return _sync_server.oneshot_async_run(
+            calc_fig,
+            args=args,
+            kwargs=kwargs,
+            sync_timeout=sync_timeout,
+        )
 
 
-def write_fig_sync(*args: Any, **kwargs: Any):
+def write_fig_sync(
+    *args: Any,
+    timeout: float | None | Literal["auto"] = "auto",
+    **kwargs: Any,
+):
     """Call `write_fig` but blocking."""
     if _global_server.is_running():
+        if timeout != "auto":
+            warnings.warn(
+                "The timeout argument is ignored if using a server.",
+                UserWarning,
+                stacklevel=2,
+            )
         return _global_server.call_function("write_fig", *args, **kwargs)
     else:
-        return _sync_server.oneshot_async_run(write_fig, args=args, kwargs=kwargs)
+        kwargs.setdefault("timeout", timeout)
+        sync_timeout = _resolve_timeout(timeout)
+        return _sync_server.oneshot_async_run(
+            write_fig,
+            args=args,
+            kwargs=kwargs,
+            sync_timeout=sync_timeout,
+        )
 
 
-def write_fig_from_object_sync(*args: Any, **kwargs: Any):
+def write_fig_from_object_sync(
+    *args: Any,
+    timeout: float | None | Literal["auto"] = "auto",
+    **kwargs: Any,
+):
     """Call `write_fig_from_object` but blocking."""
     if _global_server.is_running():
+        if timeout != "auto":
+            warnings.warn(
+                "The timeout argument is ignored if using a server.",
+                UserWarning,
+                stacklevel=2,
+            )
         return _global_server.call_function("write_fig_from_object", *args, **kwargs)
     else:
+        kwargs.setdefault("timeout", timeout)
+        sync_timeout = _resolve_timeout(timeout)
         return _sync_server.oneshot_async_run(
             write_fig_from_object,
             args=args,
             kwargs=kwargs,
+            sync_timeout=sync_timeout,
         )

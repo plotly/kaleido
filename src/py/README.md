@@ -92,6 +92,10 @@ async def main():
 
 asyncio.run(main())
 
+# You can also set a default timeout via environment variable:
+# export KALEIDO_RENDER_TIMEOUT=30
+# Use "none" to disable timeouts.
+
 # other `kaleido.Kaleido` arguments:
 # page_generator:  Change library version (see PageGenerators below)
 
