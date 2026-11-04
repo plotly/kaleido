@@ -162,29 +162,24 @@ async def write_fig_from_object(
         )
 
 
+def _ensure_server() -> None:
+    if not _global_server.is_running():
+        _global_server.open(silence_warnings=True)
+
+
 def calc_fig_sync(*args: Any, **kwargs: Any):
     """Call `calc_fig` but blocking."""
-    if _global_server.is_running():
-        return _global_server.call_function("calc_fig", *args, **kwargs)
-    else:
-        return _sync_server.oneshot_async_run(calc_fig, args=args, kwargs=kwargs)
+    _ensure_server()
+    return _global_server.call_function("calc_fig", *args, **kwargs)
 
 
 def write_fig_sync(*args: Any, **kwargs: Any):
     """Call `write_fig` but blocking."""
-    if _global_server.is_running():
-        return _global_server.call_function("write_fig", *args, **kwargs)
-    else:
-        return _sync_server.oneshot_async_run(write_fig, args=args, kwargs=kwargs)
+    _ensure_server()
+    _global_server.call_function("write_fig", *args, **kwargs)
 
 
 def write_fig_from_object_sync(*args: Any, **kwargs: Any):
     """Call `write_fig_from_object` but blocking."""
-    if _global_server.is_running():
-        return _global_server.call_function("write_fig_from_object", *args, **kwargs)
-    else:
-        return _sync_server.oneshot_async_run(
-            write_fig_from_object,
-            args=args,
-            kwargs=kwargs,
-        )
+    _ensure_server()
+    _global_server.call_function("write_fig_from_object", *args, **kwargs)

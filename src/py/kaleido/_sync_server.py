@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-import atexit
 import warnings
-from functools import partial
 from queue import Queue
 from threading import Thread
 from typing import TYPE_CHECKING, NamedTuple
@@ -18,6 +16,7 @@ class Task(NamedTuple):
     fn: str
     args: Any
     kwargs: Any
+    result_queue: Queue  # per-caller mailbox
 
 
 class _BadFunctionName(BaseException):
@@ -37,13 +36,11 @@ class GlobalKaleidoServer:
                 if not hasattr(k, task.fn):
                     raise _BadFunctionName(f"Kaleido has no attribute {task.fn}")
                 try:
-                    self._return_queue.put(
+                    task.result_queue.put(
                         await getattr(k, task.fn)(*task.args, **task.kwargs),
                     )
                 except Exception as e:  # noqa: BLE001
-                    self._return_queue.put(e)
-
-                self._task_queue.task_done()
+                    task.result_queue.put(e)
 
     def __new__(cls):
         # Create the singleton on first instantiation
@@ -72,11 +69,8 @@ class GlobalKaleidoServer:
             daemon=True,
         )
         self._task_queue: Queue[Task | None] = Queue()
-        self._return_queue: Queue[Any] = Queue()
         self._thread.start()
         self._initialized = True
-        close = partial(self.close, silence_warnings=True)
-        atexit.register(close)
 
     def close(self, *, silence_warnings=False):
         """Reset the singleton back to an uninitialized state."""
@@ -92,7 +86,6 @@ class GlobalKaleidoServer:
         self._thread.join()
         del self._thread
         del self._task_queue
-        del self._return_queue
         self._initialized = False
 
     def call_function(self, cmd: str, *args: Any, **kwargs: Any):
@@ -117,9 +110,9 @@ class GlobalKaleidoServer:
                 UserWarning,
                 stacklevel=3,
             )
-        self._task_queue.put(Task(cmd, args, kwargs))
-        self._task_queue.join()
-        res = self._return_queue.get()
+        my_queue: Queue[Any] = Queue(maxsize=1)
+        self._task_queue.put(Task(cmd, args, kwargs, my_queue))
+        res = my_queue.get()
         if isinstance(res, BaseException):
             raise res
         else:
