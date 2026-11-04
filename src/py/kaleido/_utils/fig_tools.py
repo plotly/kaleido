@@ -10,13 +10,13 @@ from typing import TYPE_CHECKING, Literal, TypedDict
 
 import logistro
 
-from . import path_tools
+from . import font_tools, path_tools
 
 if TYPE_CHECKING:
     from pathlib import Path
     from typing import Any
 
-    from typing_extensions import TypeGuard
+    from typing_extensions import NotRequired, TypeGuard
 
     Figurish = Any  # Be nice to make it more specific, dictionary or something
     FormatString = Literal["png", "jpg", "jpeg", "webp", "svg", "json", "pdf"]
@@ -28,6 +28,9 @@ class LayoutOpts(TypedDict, total=False):
     scale: int | float
     height: int | float
     width: int | float
+    # Paths to font files (.ttf/.otf/.woff) to embed into vector output so the
+    # figure renders with them without the fonts being installed system-wide.
+    fonts: list[str | Path]
 
 
 # Output of to_spec (we give kaleido_scopes.js this)
@@ -38,6 +41,7 @@ class Spec(TypedDict):
     height: int | float
     scale: int | float
     data: Figurish
+    fonts: NotRequired[list[font_tools.FontFace]]
 
 
 _logger = logistro.getLogger(__name__)
@@ -146,5 +150,10 @@ def coerce_for_js(
         "scale": scale,
         "data": fig,
     }
+
+    # Custom fonts: read each file once, derive its family name, and package it
+    # as a base64 @font-face descriptor for the render scope to embed.
+    if fonts := opts.get("fonts"):
+        spec["fonts"] = [font_tools.font_face_from_path(font) for font in fonts]
 
     return spec

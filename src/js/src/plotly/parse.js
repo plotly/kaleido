@@ -60,6 +60,7 @@ function parse (body, _opts) {
   result.scale = isPositiveNumeric(opts.scale) ? Number(opts.scale) : cst.dflt.scale
   result.fid = isNonEmptyString(opts.fid) ? opts.fid : null
   result.encoded = !!opts.encoded
+  result.fonts = Array.isArray(opts.fonts) ? opts.fonts : []
 
   if (isNonEmptyString(opts.format)) {
     if (cst.contentFormat[opts.format]) {

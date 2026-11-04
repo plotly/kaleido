@@ -38,6 +38,7 @@ function render (info, topojsonURL, stepper) {
   const figure = info.figure;
   const format = info.format;
   const encoded = info.encoded;
+  const fonts = info.fonts || [];
 
   // Build default config, and let figure.config override it
   const defaultConfig = {
@@ -113,15 +114,23 @@ function render (info, topojsonURL, stepper) {
     return new Promise((resolve) => {resolve(done())})
   }
 
-  let promise
+  if (semver.lt(Plotly.version, '1.11.0')) {
+    errorCode = 526
+    errorMsg = `plotly.js version: ${Plotly.version}`
+    return new Promise((resolve) => {resolve(done())})
+  }
 
-  if (semver.gte(Plotly.version, '1.30.0')) {
-    promise = Plotly
-      .toImage({ data: figure.data, layout: figure.layout, config: config }, imgOpts)
-  } else if (semver.gte(Plotly.version, '1.11.0')) {
+  // Render the figure to an image. Wrapped in a function so it only runs
+  // *after* any custom fonts have loaded (see loadFonts below), ensuring text
+  // is measured with the correct font metrics.
+  const makeImage = () => {
+    if (semver.gte(Plotly.version, '1.30.0')) {
+      return Plotly
+        .toImage({ data: figure.data, layout: figure.layout, config: config }, imgOpts)
+    }
+
     const gd = document.createElement('div')
-
-    promise = Plotly
+    return Plotly
       .newPlot(gd, figure.data, figure.layout, config)
       .then(() => Plotly.toImage(gd, imgOpts))
       .then((imgData) => {
@@ -148,16 +157,22 @@ function render (info, topojsonURL, stepper) {
             return imgData
         }
       })
-  } else {
-    errorCode = 526
-    errorMsg = `plotly.js version: ${Plotly.version}`
-    return new Promise((resolve) => {resolve(done())})
   }
+
+  // Load any custom fonts into the page before rendering. This both fixes text
+  // measurement and lets the (now embedded) @font-face survive into vector
+  // output. No-op when no fonts were requested.
+  const promise = loadFonts(fonts).then(makeImage)
 
   const img = document.getElementById("kaleido-image")
   const style = document.getElementById("head-style")
 
   let exportPromise = promise.then((imgData) => {
+    // For vector output, inline the fonts into the SVG itself so the result is
+    // self-contained and renders correctly without the font being installed.
+    if (fonts.length && (format === 'svg' || PRINT_TO_PDF)) {
+      imgData = injectFontsIntoSVG(imgData, fonts)
+    }
     result = imgData
     return done()
   })
@@ -216,6 +231,60 @@ function render (info, topojsonURL, stepper) {
 
 function decodeSVG (imgData) {
   return window.decodeURIComponent(imgData.replace(cst.imgPrefix.svg, ''))
+}
+
+/**
+ * Register custom fonts with the page and wait for them to be ready.
+ *
+ * @param {Array<{family: string, format: string, url: string}>} fonts
+ * @return {Promise} resolves once every font has loaded (failures are logged,
+ *   not fatal, so rendering still proceeds with a fallback).
+ */
+function loadFonts (fonts) {
+  if (!fonts || !fonts.length ||
+      typeof FontFace === 'undefined' || !document.fonts) {
+    return Promise.resolve()
+  }
+
+  return Promise.all(fonts.map((font) => {
+    const face = new FontFace(font.family, `url(${font.url})`)
+    document.fonts.add(face)
+    return face.load().catch((err) => {
+      console.log(`kaleido: failed to load font '${font.family}': ${err}`)
+    })
+  })).then(() => document.fonts.ready)
+}
+
+/**
+ * Inline @font-face rules (with base64 font data) into an SVG so the vector
+ * output embeds the fonts and renders identically anywhere, with no system
+ * font installation required.
+ *
+ * @param {string} imgData : either a raw SVG string or a
+ *   `data:image/svg+xml,...` URI (handled transparently).
+ * @param {Array<{family: string, format: string, url: string}>} fonts
+ * @return {string} imgData in the same form it was passed in.
+ */
+function injectFontsIntoSVG (imgData, fonts) {
+  if (!fonts || !fonts.length) return imgData
+
+  const css = fonts.map((font) =>
+    `@font-face { font-family: '${font.family}';` +
+    ` src: url(${font.url}) format('${font.format}'); }`
+  ).join('\n')
+  const styleEl = `<style type="text/css"><![CDATA[\n${css}\n]]></style>`
+
+  const isDataUri = imgData.indexOf('data:image/svg+xml,') === 0
+  let svg = isDataUri
+    ? window.decodeURIComponent(imgData.replace(cst.imgPrefix.svg, ''))
+    : imgData
+
+  // Insert the <style> block immediately after the opening <svg ...> tag.
+  svg = svg.replace(/(<svg\b[^>]*>)/, `$1${styleEl}`)
+
+  return isDataUri
+    ? 'data:image/svg+xml,' + window.encodeURIComponent(svg)
+    : svg
 }
 
 module.exports = render
