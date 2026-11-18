@@ -1,5 +1,7 @@
 ## Unreleased
 
+## v1.5.2 -- 2026-11-18
+
 ### Fixed
 - Fix intermittent `ReferenceError: kaleido_scopes is not defined` during exports by waiting for the load event of the Kaleido page itself [[#488](https://github.com/plotly/kaleido/pull/488)], with thanks to @dennisjlee for the contribution!
 
