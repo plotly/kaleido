@@ -1,0 +1,52 @@
+# .github/workflows/publish_pypi.yml
+---
+name: publish-pypi
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag to publish (for example v1.6.0)
+        required: true
+        type: string
+jobs:
+  pypi-publish:
+    name: Upload release to PyPI
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./src/py/
+    environment:
+      name: pypi
+      url: https://pypi.org/p/kaleido
+    # Signs this workflow so pypi trusts it
+    permissions:
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ inputs.tag }}
+          # setuptools-git-versioning reads the tags to set the version
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2  # v10.3.3
+      - run: uv sync --locked --all-extras --no-sources
+      - run: git diff --quiet HEAD || { echo "Working tree dirty"; exit 1; }
+      - run: uv build
+      - name: Verify that the build matches the tag
+        run: |
+          expected="${{ inputs.tag }}"
+          expected="${expected#v}"
+          wheel="dist/kaleido-$expected-py3-none-any.whl"
+          sdist="dist/kaleido-$expected.tar.gz"
+          if [ ! -f "$wheel" ] || [ ! -f "$sdist" ]; then
+            echo "Expected version $expected, but dist/ holds:"
+            ls -1 dist/
+            exit 1
+          fi
+          echo "Built $expected from ${{ inputs.tag }}"
+      - name: Publish package distributions to PyPI
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086  # v1.14.3
+        with:
+          packages-dir: src/py/dist
+          # A re-run of a tag already on PyPI skips instead of failing
+          skip-existing: true
