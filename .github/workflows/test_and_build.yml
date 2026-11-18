@@ -1,6 +1,6 @@
-# .github/workflows/publish_testpypi.yml
+# .github/workflows/test_and_build.yml
 ---
-name: test-n-build
+name: test-and-build
 on:
   workflow_dispatch:
   push:
@@ -22,10 +22,10 @@ jobs:
     env:
       UV_PYTHON: ${{ matrix.python_v }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           fetch-depth: 1
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2  # v10.3.3
       - name: Install Dependencies
         if: ${{ matrix.os == 'ubuntu-latest' }}
         run: sudo apt-get update && sudo apt-get install xvfb
@@ -77,37 +77,3 @@ jobs:
         if: ${{ runner.debug && matrix.os == 'ubuntu-latest' }}
         run: xvfb-run uv run --no-sync poe debug-test
         timeout-minutes: 8
-
-  testpypi-publish:
-    defaults:
-      run:
-        working-directory: ./src/py/
-    name: Upload release to TestPyPI
-    needs: super-test
-    if: ${{ !cancelled() &&
-            !failure() &&
-            github.event_name == 'push' &&
-            github.run_attempt == 1 }}
-    runs-on: ubuntu-latest
-    environment:
-      name: testpypi
-      url: https://test.pypi.org/p/kaleido
-    # Signs this workflow so pypi trusts it
-    permissions:
-      id-token: write
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
-      - uses: actions/setup-python@v5
-        with:
-          python-version-file: "./src/py/pyproject.toml"
-      - run: git checkout ${{ github.ref_name }}
-      - run: uv sync --frozen --all-extras
-      - run: uv build
-      - name: Publish package distributions to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          repository-url: https://test.pypi.org/legacy/.
-          packages-dir: src/py/dist
-          verbose: true
