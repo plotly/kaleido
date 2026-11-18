@@ -100,7 +100,12 @@ asyncio.run(main())
 # - path:             (optional) A directory (names auto-generated based on title)
 #                     or a single file.
 # - opts:             (optional) A dictionary with image options:
-#                     `{"scale":..., "format":..., "width":..., "height":...}`
+#                     `{"scale":..., "format":..., "width":..., "height":...,
+#                       "fonts": [...]}`
+#                     `fonts` is a list of paths to font files (.ttf/.otf/.woff).
+#                     They are embedded into vector output (svg/pdf/eps) so
+#                     charts render with the right font without installing it
+#                     system-wide.
 # - cancel_on_error:  (optional) If False (default), errors during rendering are collected
 #                     and returned as a tuple after all figures are attempted.
 #                     If True, the first error is raised immediately and any
