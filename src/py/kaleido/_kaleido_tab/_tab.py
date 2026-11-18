@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 from typing import TYPE_CHECKING
 
@@ -10,7 +11,6 @@ from . import _js_logger
 from ._errors import _raise_error
 
 if TYPE_CHECKING:
-    import asyncio
     from pathlib import Path
 
     import choreographer as choreo
@@ -68,32 +68,72 @@ class _KaleidoTab:
             url: Override the location of the kaleidofier script if necessary.
 
         """
-        # Subscribe to event which will contain javascript engine ID (need it
-        # for calling javascript functions)
-        javascript_ready = _subscribe_new(self.tab, "Runtime.executionContextCreated")
+        # Subscribe to event indicating that page or a subframe has loaded. We queue
+        # these events and filter them afterwards once we know the IDs from our
+        # navigation. We can't simply wait for the first load event, because it could
+        # come from Chrome's new tab page.
+        load_events: asyncio.Queue[dict] = asyncio.Queue()
 
-        # Subscribe to event indicating page ready.
-        page_ready = _subscribe_new(self.tab, "Page.loadEventFired")
+        async def on_lifecycle(event):
+            if event["params"]["name"] == "load":
+                load_events.put_nowait(event["params"])
 
-        # Apply headers if they exist
-        await self._apply_headers()
+        self.tab.subscribe("Page.lifecycleEvent", on_lifecycle)
 
-        # Enable Page events before navigation; completed load events are not replayed.
-        _logger.debug2(f"Calling Page.enable on {self.tab}")
-        _raise_error(await self.tab.send_command("Page.enable"))
+        try:
+            await self._apply_headers()
 
-        # Navigating page. This will trigger the above events.
-        _logger.debug2(f"Calling Page.navigate on {self.tab}")
-        _raise_error(await self.tab.send_command("Page.navigate", params={"url": url}))
+            # Enable events before navigating so fast loads cannot be missed.
+            _logger.debug2(f"Calling Page.enable on {self.tab}")
+            _raise_error(await self.tab.send_command("Page.enable"))
+            _raise_error(
+                await self.tab.send_command(
+                    "Page.setLifecycleEventsEnabled",
+                    params={"enabled": True},
+                ),
+            )
 
-        # Enabling javascript events (for javascript_ready).
-        # We do this after navigation to receive the new execution context.
-        _logger.debug2(f"Calling Runtime.enable on {self.tab}")
-        _raise_error(await self.tab.send_command("Runtime.enable"))
+            # Navigating page. This will trigger the above events.
+            _logger.debug2(f"Calling Page.navigate on {self.tab}")
+            _raise_error(
+                navigate_response := await self.tab.send_command(
+                    "Page.navigate", params={"url": url}
+                )
+            )
+            navigation = navigate_response["result"]
+            if error := navigation.get("errorText"):
+                raise RuntimeError(f"Navigation to {url} failed: {error}")
 
-        self._current_js_id = _dtools.get_js_id(await javascript_ready)
+            # Wait for the correct load event which matches the navigation we made.
+            while True:
+                loaded = await load_events.get()
+                if (
+                    loaded["frameId"] == navigation["frameId"]
+                    and loaded["loaderId"] == navigation["loaderId"]
+                ):
+                    break
+        finally:
+            self.tab.unsubscribe("Page.lifecycleEvent")
 
-        await page_ready  # don't care result, ready is ready
+        # Runtime.enable reports existing contexts; wait for load to avoid old ones.
+        contexts: asyncio.Queue[int] = asyncio.Queue()
+
+        async def on_context_created(event):
+            context = event["params"]["context"]
+            aux = context.get("auxData", {})
+            if (
+                aux.get("frameId") == navigation["frameId"]
+                and aux.get("isDefault") is True
+            ):
+                contexts.put_nowait(context["id"])
+
+        self.tab.subscribe("Runtime.executionContextCreated", on_context_created)
+        try:
+            _logger.debug2(f"Calling Runtime.enable on {self.tab}")
+            _raise_error(await self.tab.send_command("Runtime.enable"))
+            self._current_js_id = await contexts.get()
+        finally:
+            self.tab.unsubscribe("Runtime.executionContextCreated")
 
         # this runs *after* page load because running it first thing
         # requires a couple extra lines
