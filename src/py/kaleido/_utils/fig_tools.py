@@ -115,9 +115,15 @@ def coerce_for_js(
         raise AttributeError(f"Unknown key(s) in layout options: {_rest}")
 
     # Extract info
+    # A directory can have a suffix-like name (e.g. "2024.01.31"), so only a
+    # file path's suffix sets the format.
     file_format = _coerce_format(
         opts.get("format")
-        or (path.suffix.lstrip(".") if path and path.suffix else DEFAULT_EXT),
+        or (
+            path.suffix.lstrip(".")
+            if path and path.suffix and not path.is_dir()
+            else DEFAULT_EXT
+        ),
     )
 
     layout = fig.get("layout", {})
